@@ -302,6 +302,10 @@
             android:name=".ui.dict.rule.DictRuleActivity"
             android:configChanges="orientation|screenSize"
             android:hardwareAccelerated="true" />
+        <!-- OPDS 目录 -->
+        <activity
+            android:name=".ui.opds.OpdsActivity"
+            android:launchMode="singleTop" />
         <!-- 文件管理 -->
         <activity
             android:name=".ui.file.FileManageActivity"

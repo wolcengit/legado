@@ -385,9 +385,11 @@ class AnalyzeByJSoup(doc: Any) {
              * */
             if (split == '!') { //排除
 
-                for (pcInt in indexSet) elements[pcInt] = null
-
-                elements.removeAll(nullSet) //测试过，这样就行
+                val filteredElements = Elements()
+                for ((i, el) in elements.withIndex()) {
+                    if (i !in indexSet) filteredElements.add(el)
+                }
+                elements = filteredElements
 
             } else if (split == '.') { //选择
 

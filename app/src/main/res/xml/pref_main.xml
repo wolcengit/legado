@@ -12,6 +12,13 @@
         app:iconSpaceReserved="false" />
 
     <io.legado.app.lib.prefs.Preference
+        android:icon="@drawable/ic_outline_cloud_24"
+        android:key="opdsCatalog"
+        android:summary="@string/opds_catalog_desc"
+        android:title="@string/opds_catalog"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.Preference
         android:icon="@drawable/ic_cfg_source"
         android:key="txtTocRuleManage"
         android:summary="@string/config_txt_toc_rule"

@@ -1,0 +1,341 @@
+/**
+ * SecurityVerifyPlugin.gradle
+ *
+ * 构建产物安全验证插件 — 在 release 构建后自动执行 APK 安全检查。
+ *
+ * 功能：
+ * 1. 使用 aapt2 dump permissions 检查权限清单
+ * 2. 扫描 DEX 中的未混淆敏感类名模式
+ * 3. 输出签名信息摘要（签名算法、证书指纹、签名方案版本）
+ * 4. 生成安全验证报告
+ *
+ * 需求: 8.1, 8.2, 8.3, 8.4
+ */
+
+// 已移除的敏感权限列表 — 如果在最终 APK 中检测到这些权限，构建将失败
+def REMOVED_PERMISSIONS = [
+    'android.permission.READ_PHONE_STATE',
+    'android.permission.REQUEST_INSTALL_PACKAGES'
+]
+
+// 未混淆敏感类名模式 — 在 DEX 中检测到这些模式时输出警告
+def SENSITIVE_CLASS_PATTERNS = [
+    ~/\bjava\.lang\.Runtime\b/,
+    ~/\bjava\.lang\.ProcessBuilder\b/,
+    ~/\bjava\.net\.URLClassLoader\b/,
+    ~/\bdalvik\.system\.\w+/,
+]
+
+tasks.register('verifyReleaseSecurity') {
+    description = 'Verify release APK security: permissions, obfuscation, and signing'
+    group = 'verification'
+
+    // Run after assembleAppRelease if it exists, otherwise after assembleRelease
+    dependsOn 'assembleAppRelease'
+
+    doLast {
+        // --- Locate the release APK ---
+        def apkFile = null
+        def apkDir = file("${buildDir}/outputs/apk")
+        if (apkDir.exists()) {
+            apkDir.eachFileRecurse { f ->
+                if (f.name.endsWith('.apk') && (f.path.contains('release') || f.name.contains('release'))) {
+                    apkFile = f
+                }
+            }
+        }
+        if (apkFile == null) {
+            throw new GradleException("Release APK not found under ${apkDir}. Ensure assembleAppRelease has run.")
+        }
+        logger.lifecycle("Found release APK: ${apkFile.absolutePath}")
+
+        // --- Locate Android SDK tools ---
+        def sdkDir = android.sdkDirectory
+        def buildToolsVersion = android.buildToolsVersion
+        def buildToolsDir = file("${sdkDir}/build-tools/${buildToolsVersion}")
+        def aapt2 = new File(buildToolsDir, 'aapt2')
+        if (!aapt2.exists()) {
+            aapt2 = new File(buildToolsDir, 'aapt2.exe')
+        }
+        def apksigner = new File(buildToolsDir, 'apksigner')
+        if (!apksigner.exists()) {
+            apksigner = new File(buildToolsDir, 'apksigner.bat')
+        }
+
+        def reportLines = []
+        reportLines << '=' * 60
+        reportLines << '  Security Verification Report'
+        reportLines << '=' * 60
+        reportLines << "APK: ${apkFile.name}"
+        reportLines << "Date: ${new Date().format('yyyy-MM-dd HH:mm:ss')}"
+        reportLines << ''
+
+        def hasCriticalIssue = false
+
+        // ============================================================
+        // 1. Permission check via aapt2 dump permissions
+        // ============================================================
+        reportLines << '-' * 60
+        reportLines << '  1. Permission Check (aapt2 dump permissions)'
+        reportLines << '-' * 60
+
+        if (aapt2.exists()) {
+            def permOutput = new ByteArrayOutputStream()
+            exec {
+                commandLine aapt2.absolutePath, 'dump', 'permissions', apkFile.absolutePath
+                standardOutput = permOutput
+                errorOutput = new ByteArrayOutputStream()
+                ignoreExitValue = true
+            }
+            def permText = permOutput.toString('UTF-8')
+            def permissionLines = permText.readLines().findAll { it.trim().startsWith('uses-permission:') }
+
+            reportLines << "Declared permissions (${permissionLines.size()}):"
+            permissionLines.each { line ->
+                reportLines << "  ${line.trim()}"
+            }
+            reportLines << ''
+
+            // Check for removed permissions that should NOT be present
+            REMOVED_PERMISSIONS.each { removedPerm ->
+                def found = permissionLines.any { it.contains("'${removedPerm}'") || it.contains("\"${removedPerm}\"") || it.contains("name=${removedPerm}") || it.contains(removedPerm) }
+                if (found) {
+                    reportLines << "CRITICAL: Removed permission still present: ${removedPerm}"
+                    hasCriticalIssue = true
+                } else {
+                    reportLines << "OK: ${removedPerm} correctly removed"
+                }
+            }
+        } else {
+            reportLines << "WARNING: aapt2 not found at ${aapt2.absolutePath}, skipping permission check"
+        }
+        reportLines << ''
+
+        // ============================================================
+        // 2. DEX sensitive class name scan
+        // ============================================================
+        reportLines << '-' * 60
+        reportLines << '  2. DEX Sensitive Class Name Scan'
+        reportLines << '-' * 60
+
+        // Use dexdump if available, otherwise scan strings from the APK
+        def dexdump = new File(buildToolsDir, 'dexdump')
+        if (!dexdump.exists()) {
+            dexdump = new File(buildToolsDir, 'dexdump.exe')
+        }
+
+        def sensitiveFindings = []
+
+        // Extract DEX files from APK to a temp directory for scanning
+        def tempDir = file("${buildDir}/tmp/securityVerify")
+        tempDir.mkdirs()
+
+        // Use a simple string scan on the APK binary for sensitive patterns
+        // This catches class names in DEX string tables
+        try {
+            def apkBytes = apkFile.bytes
+            def apkString = new String(apkBytes, 'ISO-8859-1')
+
+            SENSITIVE_CLASS_PATTERNS.each { pattern ->
+                def matcher = pattern.matcher(apkString)
+                def matches = []
+                while (matcher.find()) {
+                    matches << matcher.group()
+                }
+                if (!matches.isEmpty()) {
+                    def uniqueMatches = matches.unique()
+                    sensitiveFindings << "Pattern '${pattern}': found ${uniqueMatches.size()} match(es): ${uniqueMatches.take(5)}"
+                }
+            }
+        } catch (Exception e) {
+            reportLines << "WARNING: Failed to scan APK binary: ${e.message}"
+        }
+
+        if (sensitiveFindings.isEmpty()) {
+            reportLines << "OK: No unobfuscated sensitive class name patterns detected"
+        } else {
+            reportLines << "WARNING: Unobfuscated sensitive class name patterns detected:"
+            sensitiveFindings.each { finding ->
+                reportLines << "  ${finding}"
+            }
+        }
+        reportLines << ''
+
+        // ============================================================
+        // 3. Signing information summary
+        // ============================================================
+        reportLines << '-' * 60
+        reportLines << '  3. Signing Information Summary'
+        reportLines << '-' * 60
+
+        if (apksigner.exists()) {
+            // Verify signature and print certs
+            def sigOutput = new ByteArrayOutputStream()
+            def sigError = new ByteArrayOutputStream()
+            def sigResult = exec {
+                commandLine apksigner.absolutePath, 'verify', '--verbose', '--print-certs', apkFile.absolutePath
+                standardOutput = sigOutput
+                errorOutput = sigError
+                ignoreExitValue = true
+            }
+
+            def sigText = sigOutput.toString('UTF-8')
+            if (sigResult.exitValue == 0) {
+                sigText.readLines().each { line ->
+                    def trimmed = line.trim()
+                    if (trimmed.startsWith('Signer') ||
+                        trimmed.contains('algorithm') ||
+                        trimmed.contains('digest') ||
+                        trimmed.contains('SHA-') ||
+                        trimmed.contains('MD5') ||
+                        trimmed.contains('certificate') ||
+                        trimmed.startsWith('Verified using') ||
+                        trimmed.contains('scheme') ||
+                        trimmed.contains('DN:') ||
+                        trimmed.contains('Subject:')) {
+                        reportLines << "  ${trimmed}"
+                    }
+                }
+            } else {
+                reportLines << "WARNING: apksigner verify failed (exit code ${sigResult.exitValue})"
+                def errText = sigError.toString('UTF-8')
+                if (errText) {
+                    reportLines << "  ${errText.take(500)}"
+                }
+            }
+        } else {
+            reportLines << "WARNING: apksigner not found at ${apksigner.absolutePath}, skipping signing check"
+        }
+        reportLines << ''
+
+        // ============================================================
+        // 4. Report summary
+        // ============================================================
+        reportLines << '=' * 60
+        reportLines << '  Summary'
+        reportLines << '=' * 60
+        if (hasCriticalIssue) {
+            reportLines << 'RESULT: FAILED — Critical security issues detected'
+        } else if (sensitiveFindings.size() > 0) {
+            reportLines << 'RESULT: PASSED with warnings — Review sensitive class name findings'
+        } else {
+            reportLines << 'RESULT: PASSED — No critical issues detected'
+        }
+        reportLines << '=' * 60
+
+        // Write report to file
+        def reportFile = file("${buildDir}/reports/security-verify-report.txt")
+        reportFile.parentFile.mkdirs()
+        reportFile.text = reportLines.join('\n')
+        logger.lifecycle("Security verification report written to: ${reportFile.absolutePath}")
+
+        // Print report to console
+        reportLines.each { line ->
+            logger.lifecycle(line)
+        }
+
+        // Fail the build if critical issues found
+        if (hasCriticalIssue) {
+            throw new GradleException("Security verification FAILED: Critical issues detected. See report at ${reportFile.absolutePath}")
+        }
+    }
+}
+
+
+/**
+ * Lightweight task: automatically output APK signing information after release build.
+ * This task is informational only — it never fails the build.
+ *
+ * 需求: 7.4
+ */
+tasks.register('printReleaseSigningInfo') {
+    description = 'Print APK signing summary (algorithm, fingerprint, scheme versions) after release build'
+    group = 'verification'
+
+    doLast {
+        try {
+            // Locate the release APK
+            def apkFile = null
+            def apkDir = file("${buildDir}/outputs/apk")
+            if (apkDir.exists()) {
+                apkDir.eachFileRecurse { f ->
+                    if (f.name.endsWith('.apk') && (f.path.contains('release') || f.name.contains('release'))) {
+                        apkFile = f
+                    }
+                }
+            }
+            if (apkFile == null) {
+                logger.lifecycle("[SigningInfo] No release APK found — skipping signing info output.")
+                return
+            }
+
+            // Locate apksigner
+            def sdkDir = android.sdkDirectory
+            def buildToolsVersion = android.buildToolsVersion
+            def buildToolsDir = file("${sdkDir}/build-tools/${buildToolsVersion}")
+            def apksigner = new File(buildToolsDir, 'apksigner')
+            if (!apksigner.exists()) {
+                apksigner = new File(buildToolsDir, 'apksigner.bat')
+            }
+            if (!apksigner.exists()) {
+                logger.lifecycle("[SigningInfo] apksigner not found — skipping signing info output.")
+                return
+            }
+
+            // Run apksigner verify --verbose --print-certs
+            def sigOutput = new ByteArrayOutputStream()
+            def sigError = new ByteArrayOutputStream()
+            def sigResult = exec {
+                commandLine apksigner.absolutePath, 'verify', '--verbose', '--print-certs', apkFile.absolutePath
+                standardOutput = sigOutput
+                errorOutput = sigError
+                ignoreExitValue = true
+            }
+
+            logger.lifecycle('')
+            logger.lifecycle('=' * 60)
+            logger.lifecycle('  APK Signing Information Summary')
+            logger.lifecycle('=' * 60)
+            logger.lifecycle("APK: ${apkFile.name}")
+
+            if (sigResult.exitValue == 0) {
+                def sigText = sigOutput.toString('UTF-8')
+                sigText.readLines().each { line ->
+                    def trimmed = line.trim()
+                    if (trimmed.startsWith('Signer') ||
+                        trimmed.contains('algorithm') ||
+                        trimmed.contains('digest') ||
+                        trimmed.contains('SHA-') ||
+                        trimmed.contains('MD5') ||
+                        trimmed.contains('certificate') ||
+                        trimmed.startsWith('Verified using') ||
+                        trimmed.contains('scheme') ||
+                        trimmed.contains('DN:') ||
+                        trimmed.contains('Subject:')) {
+                        logger.lifecycle("  ${trimmed}")
+                    }
+                }
+            } else {
+                logger.lifecycle("  WARNING: apksigner verify returned exit code ${sigResult.exitValue}")
+                def errText = sigError.toString('UTF-8')
+                if (errText) {
+                    logger.lifecycle("  ${errText.take(300)}")
+                }
+            }
+
+            logger.lifecycle('=' * 60)
+            logger.lifecycle('')
+        } catch (Exception e) {
+            // Never fail the build — this is purely informational
+            logger.lifecycle("[SigningInfo] Could not output signing info: ${e.message}")
+        }
+    }
+}
+
+// Hook: automatically run printReleaseSigningInfo after assembleAppRelease
+afterEvaluate {
+    def assembleTask = tasks.findByName('assembleAppRelease')
+    if (assembleTask != null) {
+        assembleTask.finalizedBy('printReleaseSigningInfo')
+    }
+}

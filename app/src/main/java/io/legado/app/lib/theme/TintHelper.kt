@@ -28,6 +28,7 @@ import androidx.core.widget.TextViewCompat
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import io.legado.app.R
 import io.legado.app.utils.ColorUtils
+import io.legado.app.utils.ReflectHelper
 
 /**
  * @author afollestad, plusCubed
@@ -465,21 +466,18 @@ object TintHelper {
     @SuppressLint("DiscouragedPrivateApi", "SoonBlockedPrivateApi")
     fun setCursorTint(editText: EditText, @ColorInt color: Int) {
         try {
-            val fCursorDrawableRes = TextView::class.java.getDeclaredField("mCursorDrawableRes")
-            fCursorDrawableRes.isAccessible = true
-            val mCursorDrawableRes = fCursorDrawableRes.getInt(editText)
-            val fEditor = TextView::class.java.getDeclaredField("mEditor")
-            fEditor.isAccessible = true
-            val editor = fEditor.get(editText)
-            val clazz = editor.javaClass
-            val fCursorDrawable = clazz.getDeclaredField("mCursorDrawable")
-            fCursorDrawable.isAccessible = true
+            val mCursorDrawableRes = ReflectHelper.getFieldValue<Int>(
+                editText, TextView::class.java, "mCursorDrawableRes"
+            ) ?: return
+            val editor = ReflectHelper.getFieldValue<Any>(
+                editText, TextView::class.java, "mEditor"
+            ) ?: return
             val drawables = arrayOfNulls<Drawable>(2)
             drawables[0] = ContextCompat.getDrawable(editText.context, mCursorDrawableRes)
             drawables[0] = createTintedDrawable(drawables[0], color)
             drawables[1] = ContextCompat.getDrawable(editText.context, mCursorDrawableRes)
             drawables[1] = createTintedDrawable(drawables[1], color)
-            fCursorDrawable.set(editor, drawables)
+            ReflectHelper.setFieldValue(editor, "mCursorDrawable", drawables)
         } catch (ignored: Exception) {
         }
 

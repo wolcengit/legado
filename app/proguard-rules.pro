@@ -81,9 +81,55 @@ cn.hutool.core.util.**{*;}
 # markwon
 -dontwarn org.commonmark.ext.gfm.**
 
--keep class okhttp3.*{*;}
--keep class okio.*{*;}
--keep class com.jayway.jsonpath.*{*;}
+# okhttp3 — keep internal classes with obfuscation allowed, precise keep for public API
+-keep,allowobfuscation class okhttp3.** { *; }
+-keep class okhttp3.Headers { public *; }
+-keep class okhttp3.Response { public *; }
+-keep class okhttp3.Response$Builder { public *; }
+-keep class okhttp3.Request { public *; }
+-keep class okhttp3.RequestBody { public *; }
+-keep class okhttp3.ResponseBody { public *; }
+-keep class okhttp3.MediaType { public *; }
+-keep class okhttp3.OkHttpClient { public *; }
+-keep class okhttp3.OkHttpClient$Builder { public *; }
+-keep class okhttp3.Call { public *; }
+-keep class okhttp3.Callback { public *; }
+-keep class okhttp3.Cookie { public *; }
+-keep class okhttp3.HttpUrl { public *; }
+-keep class okhttp3.Protocol { public *; }
+-keep class okhttp3.CacheControl { public *; }
+-keep class okhttp3.Interceptor { public *; }
+-keep class okhttp3.ConnectionSpec { public *; }
+-keep class okhttp3.Credentials { public *; }
+-keep class okhttp3.CookieJar { public *; }
+-keep class okhttp3.FormBody { public *; }
+-keep class okhttp3.MultipartBody { public *; }
+
+# okio — keep internal classes with obfuscation allowed, precise keep for public API
+-keep,allowobfuscation class okio.** { *; }
+-keep class okio.Buffer { public *; }
+-keep class okio.BufferedSink { public *; }
+-keep class okio.BufferedSource { public *; }
+-keep class okio.Pipe { public *; }
+-keep class okio.Source { public *; }
+-keep class okio.Timeout { public *; }
+
+# jayway jsonpath — keep only public API used by the app
+-keep,allowobfuscation class com.jayway.jsonpath.** { *; }
+-keep class com.jayway.jsonpath.JsonPath { public *; }
+-keep class com.jayway.jsonpath.ReadContext { public *; }
+-keep class com.jayway.jsonpath.DocumentContext { public *; }
+-keep class com.jayway.jsonpath.ParseContext { public *; }
+-keep class com.jayway.jsonpath.Configuration { public *; }
+-keep class com.jayway.jsonpath.Option { public *; }
+# jayway jsonpath optional providers (not included in this project)
+-dontwarn com.fasterxml.jackson.**
+-dontwarn jakarta.json.**
+-dontwarn jakarta.json.bind.**
+-dontwarn jakarta.json.spi.**
+-dontwarn jakarta.json.stream.**
+-dontwarn org.apache.tapestry5.json.**
+-dontwarn org.codehaus.jettison.json.**
 
 # LiveEventBus
 -keepclassmembers class androidx.lifecycle.LiveData {
@@ -98,6 +144,34 @@ cn.hutool.core.util.**{*;}
 ## ChangeBookSourceDialog initNavigationView
 -keepclassmembers class androidx.appcompat.widget.Toolbar {
     *** mNavButtonView;
+}
+
+## ViewExtensions ViewPager.setEdgeEffectColor
+-keepclassmembers class androidx.viewpager.widget.ViewPager {
+    *** mLeftEdge;
+    *** mRightEdge;
+}
+
+## ViewExtensions PopupMenu.show
+-keepclassmembers class androidx.appcompat.widget.PopupMenu {
+    *** mPopup;
+}
+
+## TintHelper setCursorTint
+-keepclassmembers class android.widget.TextView {
+    *** mCursorDrawableRes;
+    *** mEditor;
+}
+-keepclassmembers class android.widget.Editor {
+    *** mCursorDrawable;
+}
+
+## PreferencesExtensions getSharedPreferences
+-keepclassmembers class android.content.ContextWrapper {
+    *** mBase;
+}
+-keepclassmembers class android.app.ContextImpl {
+    *** mPreferencesDir;
 }
 
 # MenuExtensions applyOpenTint
@@ -117,8 +191,22 @@ cn.hutool.core.util.**{*;}
 -keep,allowobfuscation class * implements org.seimicrawler.xpath.core.NodeTest{*;}
 -keep,allowobfuscation class * implements org.seimicrawler.xpath.core.Function{*;}
 
-## JSOUP
--keep class org.jsoup.**{*;}
+## JSOUP — keep internal classes with obfuscation allowed, precise keep for public API
+-keep,allowobfuscation class org.jsoup.** { *; }
+-keep class org.jsoup.Jsoup { public *; }
+-keep class org.jsoup.Connection { public *; }
+-keep class org.jsoup.nodes.Document { public *; }
+-keep class org.jsoup.nodes.Element { public *; }
+-keep class org.jsoup.nodes.Node { public *; }
+-keep class org.jsoup.nodes.TextNode { public *; }
+-keep class org.jsoup.nodes.CDataNode { public *; }
+-keep class org.jsoup.select.Elements { public *; }
+-keep class org.jsoup.select.Collector { public *; }
+-keep class org.jsoup.select.Evaluator { public *; }
+-keep class org.jsoup.select.NodeTraversor { public *; }
+-keep class org.jsoup.select.NodeVisitor { public *; }
+-keep class org.jsoup.parser.Parser { public *; }
+-keep class org.jsoup.internal.StringUtil { public *; }
 -dontwarn org.jspecify.annotations.NullMarked
 
 ## ExoPlayer 反射设置ua 保证该私有变量不被混淆
@@ -130,12 +218,6 @@ cn.hutool.core.util.**{*;}
 
 ## 对外提供api
 -keep class io.legado.app.api.ReturnData{*;}
-
-# Cronet
--keepclassmembers class org.chromium.net.X509Util {
-    *** sDefaultTrustManager;
-    *** sTestTrustManager;
-}
 
 # Throwable
 -keepnames class * extends java.lang.Throwable

@@ -1,0 +1,162 @@
+package io.legado.app
+
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.element
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.list
+import io.kotest.property.arbitrary.map
+import io.kotest.property.arbitrary.string
+import io.kotest.property.checkAll
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+// Feature: security-hardening, Property 6: 敏感类名模式检测
+// **Validates: Requirements 8.4**
+
+/**
+ * Property-based test verifying that SensitiveClassNameDetector correctly
+ * identifies class names matching sensitive patterns from SecurityVerifyPlugin.gradle.
+ *
+ * Sensitive patterns:
+ * - java.lang.Runtime
+ * - java.lang.ProcessBuilder
+ * - java.net.URLClassLoader
+ * - dalvik.system.*
+ */
+class SensitiveClassNameDetectorPropertyTest {
+
+    // Known sensitive class names that must be detected
+    private val sensitiveClassNames = listOf(
+        "java.lang.Runtime",
+        "java.lang.ProcessBuilder",
+        "java.net.URLClassLoader",
+        "dalvik.system.DexClassLoader",
+        "dalvik.system.PathClassLoader",
+        "dalvik.system.BaseDexClassLoader",
+        "dalvik.system.InMemoryDexClassLoader",
+    )
+
+    // Safe class names that must NOT be detected
+    private val safeClassPrefixes = listOf(
+        "java.lang.String",
+        "java.lang.Integer",
+        "java.util.ArrayList",
+        "java.util.HashMap",
+        "org.jsoup.Jsoup",
+        "kotlin.collections.List",
+        "android.app.Activity",
+        "io.legado.app.App",
+        "com.example.MyClass",
+        "org.apache.commons.Util",
+    )
+
+    /**
+     * Property 6a: Lists containing only safe class names produce empty detection results.
+     *
+     * For any list of class names drawn from safe prefixes with random suffixes,
+     * detect() must return an empty list.
+     */
+    @Test
+    fun property6_safeClassNamesProduceEmptyResult() {
+        val arbSafeClassName = Arb.element(safeClassPrefixes).map { prefix ->
+            prefix + "." + java.util.UUID.randomUUID().toString().replace("-", "").take(8)
+        }
+        val arbSafeList = Arb.list(arbSafeClassName, range = 1..20)
+
+        runBlocking {
+            checkAll(100, arbSafeList) { classNames ->
+                val result = SensitiveClassNameDetector.detect(classNames)
+                assertTrue(
+                    "Safe class names $classNames should not be detected as sensitive, but got: $result",
+                    result.isEmpty()
+                )
+            }
+        }
+    }
+
+    /**
+     * Property 6b: Lists containing at least one sensitive class name produce non-empty results.
+     *
+     * For any list that includes an injected sensitive class name among safe names,
+     * detect() must return a non-empty list containing the injected name.
+     */
+    @Test
+    fun property6_injectedSensitiveClassNameIsDetected() {
+        val arbSafeClassName = Arb.element(safeClassPrefixes)
+        val arbSensitiveClassName = Arb.element(sensitiveClassNames)
+        val arbSafeList = Arb.list(arbSafeClassName, range = 0..10)
+
+        runBlocking {
+            checkAll(100, arbSafeList, arbSensitiveClassName) { safeNames, sensitive ->
+                val combined = safeNames + sensitive
+                val result = SensitiveClassNameDetector.detect(combined)
+                assertTrue(
+                    "List containing sensitive class '$sensitive' must be detected, but got empty result",
+                    result.isNotEmpty()
+                )
+                assertTrue(
+                    "Detected list must contain '$sensitive', but got: $result",
+                    result.contains(sensitive)
+                )
+            }
+        }
+    }
+
+    /**
+     * Property 6c: Detection count matches the actual number of sensitive entries.
+     *
+     * For any list with a known number of injected sensitive names among safe names,
+     * detect() must return exactly that many results.
+     */
+    @Test
+    fun property6_detectionCountMatchesInjectedCount() {
+        val arbSafeClassName = Arb.element(safeClassPrefixes)
+        val arbSafeList = Arb.list(arbSafeClassName, range = 1..10)
+        val arbSensitiveList = Arb.list(Arb.element(sensitiveClassNames), range = 1..5)
+
+        runBlocking {
+            checkAll(100, arbSafeList, arbSensitiveList) { safeNames, sensitiveNames ->
+                val combined = safeNames + sensitiveNames
+                val result = SensitiveClassNameDetector.detect(combined)
+                assertEquals(
+                    "Expected ${sensitiveNames.size} sensitive names detected from $combined, but got ${result.size}",
+                    sensitiveNames.size,
+                    result.size
+                )
+            }
+        }
+    }
+
+    /**
+     * Property 6d: Random strings generated by Arb.string() are not falsely detected.
+     *
+     * For any list of purely random strings (unlikely to match sensitive patterns),
+     * any detected result must actually match a sensitive pattern.
+     */
+    @Test
+    fun property6_randomStringsNoFalsePositives() {
+        val sensitivePatterns = listOf(
+            Regex("""\bjava\.lang\.Runtime\b"""),
+            Regex("""\bjava\.lang\.ProcessBuilder\b"""),
+            Regex("""\bjava\.net\.URLClassLoader\b"""),
+            Regex("""\bdalvik\.system\.\w+"""),
+        )
+
+        val arbRandomList = Arb.list(Arb.string(minSize = 0, maxSize = 50), range = 1..20)
+
+        runBlocking {
+            checkAll(100, arbRandomList) { randomNames ->
+                val result = SensitiveClassNameDetector.detect(randomNames)
+                // Every detected name must genuinely match at least one sensitive pattern
+                result.forEach { detected ->
+                    assertTrue(
+                        "Detected '$detected' must match a sensitive pattern",
+                        sensitivePatterns.any { it.containsMatchIn(detected) }
+                    )
+                }
+            }
+        }
+    }
+}

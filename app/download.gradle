@@ -6,6 +6,7 @@ def BASE_PATH = "https://storage.googleapis.com/chromium-cronet/android/" + Cron
 def assetsDir = projectDir.toString() + "/src/main/assets"
 def libPath = projectDir.toString() + "/cronetlib"
 def soPath = projectDir.toString() + "/so"
+def jniLibsPath = projectDir.toString() + "/src/main/jniLibs"
 
 /**
  * 从文件生成MD5
@@ -40,6 +41,25 @@ tasks.register('downloadJar', Download) {
     overwrite true
     onlyIfModified false
 }
+/**
+ * 下载Cronet的arm64-v8a so 到 jniLibs 预置目录
+ */
+tasks.register('downloadARM64JniLibs', Download) {
+    src BASE_PATH + "libs/arm64-v8a/libcronet." + CronetVersion + ".so"
+    dest jniLibsPath + "/arm64-v8a/libcronet." + CronetVersion + ".so"
+    overwrite true
+    onlyIfModified true
+}
+/**
+ * 下载Cronet的armeabi-v7a so 到 jniLibs 预置目录
+ */
+tasks.register('downloadARMv7JniLibs', Download) {
+    src BASE_PATH + "libs/armeabi-v7a/libcronet." + CronetVersion + ".so"
+    dest jniLibsPath + "/armeabi-v7a/libcronet." + CronetVersion + ".so"
+    overwrite true
+    onlyIfModified true
+}
+
 /**
  * 下载Cronet的arm64-v8a so
  */
@@ -83,7 +103,7 @@ tasks.register('downloadX86', Download) {
  * gradlew app:downloadCronet
  */
 tasks.register('downloadCronet') {
-    dependsOn downloadJar, downloadARM64, downloadARMv7, downloadX86_64, downloadX86
+    dependsOn downloadJar, downloadARM64, downloadARMv7, downloadX86_64, downloadX86, downloadARM64JniLibs, downloadARMv7JniLibs
 
     doLast {
         StringBuilder sb = new StringBuilder("{")

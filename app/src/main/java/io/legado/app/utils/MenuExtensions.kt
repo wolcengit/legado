@@ -15,7 +15,7 @@ import androidx.core.view.forEach
 import io.legado.app.R
 import io.legado.app.constant.Theme
 import io.legado.app.lib.theme.primaryTextColor
-import java.lang.reflect.Method
+
 
 @SuppressLint("RestrictedApi")
 @Suppress("UsePropertyAccessSyntax")
@@ -39,26 +39,17 @@ fun Menu.applyTint(context: Context, theme: Theme = Theme.Auto): Menu = this.let
 @SuppressLint("RestrictedApi")
 fun Menu.applyOpenTint(context: Context) {
     //展开菜单显示图标
-    if (this.javaClass.simpleName.equals("MenuBuilder", ignoreCase = true)) {
-        val defaultTextColor = context.getCompatColor(R.color.primaryText)
-        kotlin.runCatching {
-            var method: Method =
-                this.javaClass.getDeclaredMethod("setOptionalIconsVisible", java.lang.Boolean.TYPE)
-            method.isAccessible = true
-            method.invoke(this, true)
-            method = this.javaClass.getDeclaredMethod("getNonActionItems")
-            val menuItems = method.invoke(this)
-            if (menuItems is ArrayList<*>) {
-                for (menuItem in menuItems) {
-                    if (menuItem is MenuItem) {
-                        menuItem.icon?.setTintMutate(defaultTextColor)
-                    }
-                }
+    val defaultTextColor = context.getCompatColor(R.color.primaryText)
+    if (this is MenuBuilder) {
+        // 使用 MenuBuilder 公开 API 替代反射调用 setOptionalIconsVisible
+        this.setOptionalIconsVisible(true)
+        this.nonActionItems?.forEach { menuItem ->
+            if (menuItem is MenuItem) {
+                menuItem.icon?.setTintMutate(defaultTextColor)
             }
         }
-    } else if (this.javaClass.simpleName.equals("SubMenuBuilder", ignoreCase = true)) {
-        val defaultTextColor = context.getCompatColor(R.color.primaryText)
-        (this as? SubMenuBuilder)?.forEach { item: MenuItem ->
+    } else if (this is SubMenuBuilder) {
+        this.forEach { item: MenuItem ->
             item.icon?.setTintMutate(defaultTextColor)
         }
     }

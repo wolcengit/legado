@@ -33,12 +33,17 @@ android {
     }
 
     signingConfigs {
-        if (project.hasProperty("RELEASE_STORE_FILE")) {
+        def storeFilePath = System.getenv("RELEASE_STORE_FILE") ?: (project.hasProperty("RELEASE_STORE_FILE") ? RELEASE_STORE_FILE : null)
+        def storePass = System.getenv("RELEASE_STORE_PASSWORD") ?: (project.hasProperty("RELEASE_STORE_PASSWORD") ? RELEASE_STORE_PASSWORD : null)
+        def keyAliasVal = System.getenv("RELEASE_KEY_ALIAS") ?: (project.hasProperty("RELEASE_KEY_ALIAS") ? RELEASE_KEY_ALIAS : null)
+        def keyPass = System.getenv("RELEASE_KEY_PASSWORD") ?: (project.hasProperty("RELEASE_KEY_PASSWORD") ? RELEASE_KEY_PASSWORD : null)
+
+        if (storeFilePath != null) {
             myConfig {
-                storeFile file(RELEASE_STORE_FILE)
-                storePassword RELEASE_STORE_PASSWORD
-                keyAlias RELEASE_KEY_ALIAS
-                keyPassword RELEASE_KEY_PASSWORD
+                storeFile file(storeFilePath)
+                storePassword storePass
+                keyAlias keyAliasVal
+                keyPassword keyPass
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
@@ -143,6 +148,8 @@ android {
     sourceSets {
         // Adds exported schema location as test app assets.
         androidTest.assets.srcDirs += files("$projectDir/schemas".toString())
+        // 预置 Cronet SO 库到 APK 中，覆盖 arm64-v8a 和 armeabi-v7a 架构
+        main.jniLibs.srcDirs += ['src/main/jniLibs']
     }
     lint {
         checkDependencies = true
@@ -303,3 +310,6 @@ dependencies {
     //com.github.AmrDeveloper:CodeView代码编辑已集成到应用内
     //epubLib集成到应用内
 }
+
+// 安全验证插件 — 在 release 构建后自动执行 APK 安全检查
+apply from: 'SecurityVerifyPlugin.gradle'

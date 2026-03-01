@@ -97,12 +97,18 @@ object RhinoScriptEngine : AbstractScriptEngine(), Invocable, Compilable {
         }
         cx.allowScriptRun = true
         cx.recursiveCount++
+        val isOutermost = cx.recursiveCount == 1
+        if (isOutermost) {
+            cx.startExecutionTimer()
+        }
         val ret: Any?
         try {
             cx.checkRecursive()
             var filename = this["javax.script.filename"] as? String
             filename = filename ?: "<Unknown source>"
             ret = cx.evaluateReader(scope, reader, filename, 1, null)
+        } catch (e: ScriptTimeoutException) {
+            throw ScriptException(e.message ?: "Script execution timed out")
         } catch (re: RhinoException) {
             val line = if (re.lineNumber() == 0) -1 else re.lineNumber()
             val msg: String = if (re is JavaScriptException) {
@@ -116,6 +122,9 @@ object RhinoScriptEngine : AbstractScriptEngine(), Invocable, Compilable {
         } catch (var14: IOException) {
             throw ScriptException(var14)
         } finally {
+            if (isOutermost) {
+                cx.clearExecutionTimer()
+            }
             cx.coroutineContext = previousCoroutineContext
             cx.allowScriptRun = false
             cx.recursiveCount--
@@ -131,6 +140,10 @@ object RhinoScriptEngine : AbstractScriptEngine(), Invocable, Compilable {
         withContext(VMBridgeReflect.contextLocal.asContextElement()) {
             cx.allowScriptRun = true
             cx.recursiveCount++
+            val isOutermost = cx.recursiveCount == 1
+            if (isOutermost) {
+                cx.startExecutionTimer()
+            }
             try {
                 cx.checkRecursive()
                 var filename = this@RhinoScriptEngine["javax.script.filename"] as? String
@@ -153,6 +166,8 @@ object RhinoScriptEngine : AbstractScriptEngine(), Invocable, Compilable {
                         }
                     }
                 }
+            } catch (e: ScriptTimeoutException) {
+                throw ScriptException(e.message ?: "Script execution timed out")
             } catch (re: RhinoException) {
                 val line = if (re.lineNumber() == 0) -1 else re.lineNumber()
                 val msg: String = if (re is JavaScriptException) {
@@ -166,6 +181,9 @@ object RhinoScriptEngine : AbstractScriptEngine(), Invocable, Compilable {
             } catch (var14: IOException) {
                 throw ScriptException(var14)
             } finally {
+                if (isOutermost) {
+                    cx.clearExecutionTimer()
+                }
                 cx.allowScriptRun = false
                 cx.recursiveCount--
                 Context.exit()

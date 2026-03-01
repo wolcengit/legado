@@ -44,7 +44,12 @@ class JsTest {
     fun testFor() {
         val scope = RhinoScriptEngine.run {
             val scope = getRuntimeScope(ScriptBindings())
-            eval(printJs, scope)
+            @Language("js")
+            val noopPrintJs = """
+                function print(str, newline) {}
+                function println(str) {}
+            """.trimIndent()
+            eval(noopPrintJs, scope)
             scope
         }
 

@@ -36,6 +36,7 @@ import io.legado.app.ui.book.source.manage.BookSourceActivity
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.recycler.VerticalDivider
 import io.legado.app.utils.ColorUtils
+import io.legado.app.utils.ReflectHelper
 import io.legado.app.utils.StartActivityContract
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.dpToPx
@@ -193,12 +194,14 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
             dismissAllowingStateLoss()
         }
         kotlin.runCatching {
-            val mNavButtonViewField = Toolbar::class.java.getDeclaredField("mNavButtonView")
-            mNavButtonViewField.isAccessible = true
-            val navigationView = mNavButtonViewField.get(binding.toolBar) as ImageButton
-            val isLight = ColorUtils.isColorLight(primaryColor)
-            val textColor = requireContext().getPrimaryTextColor(isLight)
-            navigationView.setColorFilter(textColor)
+            val navigationView = ReflectHelper.getFieldValue<ImageButton>(
+                binding.toolBar, Toolbar::class.java, "mNavButtonView"
+            )
+            if (navigationView != null) {
+                val isLight = ColorUtils.isColorLight(primaryColor)
+                val textColor = requireContext().getPrimaryTextColor(isLight)
+                navigationView.setColorFilter(textColor)
+            }
         }
     }
 

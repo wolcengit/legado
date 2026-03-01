@@ -44,7 +44,6 @@ import io.legado.app.utils.canvasrecorder.record
 import splitties.systemservices.inputMethodManager
 import splitties.views.bottomPadding
 import splitties.views.topPadding
-import java.lang.reflect.Field
 
 
 private tailrec fun getCompatActivity(context: Context?): AppCompatActivity? {
@@ -104,12 +103,9 @@ fun RecyclerView.setEdgeEffectColor(@ColorInt color: Int) {
 
 fun ViewPager.setEdgeEffectColor(@ColorInt color: Int) {
     try {
-        val clazz = ViewPager::class.java
         for (name in arrayOf("mLeftEdge", "mRightEdge")) {
-            val field = clazz.getDeclaredField(name)
-            field.isAccessible = true
-            val edge = field.get(this)
-            (edge as EdgeEffect).color = color
+            val edge = ReflectHelper.getFieldValue<EdgeEffect>(this, ViewPager::class.java, name)
+            edge?.let { it.color = color }
         }
     } catch (ignored: Exception) {
     }
@@ -243,9 +239,8 @@ fun TextView.setTextIfNotEqual(charSequence: CharSequence?) {
 @SuppressLint("RestrictedApi")
 fun PopupMenu.show(x: Int, y: Int) {
     kotlin.runCatching {
-        val field: Field = this.javaClass.getDeclaredField("mPopup")
-        field.isAccessible = true
-        (field.get(this) as MenuPopupHelper).show(x, y)
+        val popup = ReflectHelper.getFieldValue<MenuPopupHelper>(this, "mPopup")
+        popup?.show(x, y)
     }.onFailure {
         it.printOnDebug()
     }

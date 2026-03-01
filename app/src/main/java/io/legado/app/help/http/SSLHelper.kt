@@ -14,6 +14,7 @@ import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import okhttp3.OkHttpClient
 import javax.net.ssl.*
 
 @Suppress("unused")
@@ -68,6 +69,24 @@ object SSLHelper {
      * 当验证 URL 主机名使用的默认规则失败时使用这些回调。如果主机名是可接受的，则返回 true
      */
     val unsafeHostnameVerifier: HostnameVerifier = HostnameVerifier { _, _ -> true }
+
+    /**
+     * 为启用 SSL 绕过的书源创建独立的 OkHttpClient 实例。
+     * 当 enableUnsafeSSL 为 false 时，直接返回 baseClient；
+     * 当 enableUnsafeSSL 为 true 时，基于 baseClient 创建新实例，
+     * 配置 unsafeSSLSocketFactory 和 unsafeHostnameVerifier，
+     * 不影响全局 okHttpClient。
+     */
+    fun createPerSourceClient(
+        baseClient: OkHttpClient,
+        enableUnsafeSSL: Boolean
+    ): OkHttpClient {
+        if (!enableUnsafeSSL) return baseClient
+        return baseClient.newBuilder()
+            .sslSocketFactory(unsafeSSLSocketFactory, unsafeTrustManager)
+            .hostnameVerifier(unsafeHostnameVerifier)
+            .build()
+    }
 
     class SSLParams {
         lateinit var sSLSocketFactory: SSLSocketFactory
